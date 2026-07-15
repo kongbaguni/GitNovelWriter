@@ -1,0 +1,129 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Xcode
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+*.xcscmblueprint
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
+*.xcodeproj/*.pbxuser
+*.xcodeproj/*.mode1v3
+*.xcodeproj/*.mode2v3
+
+# Xcode DerivedData & archives
+DerivedData/
+build/
+Build/
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+/.swiftpm/xcode/package.xcworkspace/xcuserdata/
+
+# CocoaPods
+Pods/
+# If you have Pods committed, you may want to ignore only the workspace data
+# Uncomment if needed:
+# *.xcworkspace
+
+# Carthage
+Carthage/Build/
+Carthage/Checkouts/
+Carthage/DerivedData/
+
+# Accio dependency manager
+Dependencies/
+.accio/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/README.md
+
+# Tuist
+Tuist/Dependencies/
+Tuist/Cache/
+
+# SwiftLint & SwiftFormat caches
+.swiftlint.yml
+.swiftlint.cache
+.swiftformat
+.swiftformat.cache
+
+# Swift Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Core Data / SwiftData generated files (user-specific)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.momd
+
+# Simulator logs and device support
+~/Library/Developer/CoreSimulator/Devices/
+
+# Crash logs
+*.crash
+*.ips
+
+# Coverage & reports
+*.xccovreport
+*.xccovarchive
+.xccov/
+
+# Temporary files
+*.swp
+*.swo
+*~
+*.tmp
+
+# Editor settings
+.vscode/
+.idea/
+*.iml
+
+# Ruby / Bundler
+.bundle/
+vendor/bundle/
+
+# Node
+node_modules/
+
+# Swift Package plugins build artifacts
+.swiftpm/plugins/
+
+# XCResult bundles
+*.xcresult
+
+# Asset catalogs (generated variants)
+*.car
+
+# Metal intermediate files
+*.metallib
+
+# SwiftPM local checkouts
+.checkouts/
+
+# Git
+.git-credentials
+.gitignore~
