@@ -12,7 +12,7 @@ import SwiftData
 struct GitNovelWriterApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            GitRepository.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -25,8 +25,9 @@ struct GitNovelWriterApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RepoListView()
         }
         .modelContainer(sharedModelContainer)
     }
 }
+
