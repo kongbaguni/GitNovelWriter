@@ -6,10 +6,11 @@
 //
 
 import SwiftUI
-
+#if canImport(SwiftGit2)
 import SwiftGit2
+#endif
 
-
+#if canImport(SwiftGit2)
 struct RepoCredentalView : View {
     @AppStorage("userName") var username: String = ""
     @AppStorage("token") var token: String = ""
@@ -58,4 +59,13 @@ struct RepoCredentalView : View {
             .createPATCredentials(username: username, token: token)
     }
 }
-
+#else
+struct RepoCredentalView: View {
+    var body: some View {
+        Section("인증정보") {
+            Text("Preview에서는 SwiftGit2가 비활성화되어 인증 UI를 표시할 수 없습니다.")
+                .foregroundColor(.secondary)
+        }
+    }
+}
+#endif

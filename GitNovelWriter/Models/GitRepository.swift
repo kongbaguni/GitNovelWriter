@@ -9,7 +9,9 @@
 // GitRepository.swift
 import Foundation
 import SwiftData
+#if canImport(SwiftGit2)
 import SwiftGit2
+#endif
 
 @Model
 final class GitRepository {
@@ -35,3 +37,4 @@ extension GitRepository {
         return documents.appendingPathComponent(localPath)
     }
 }
+

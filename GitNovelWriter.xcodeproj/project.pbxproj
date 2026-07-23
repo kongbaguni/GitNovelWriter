@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1B2A7746300710BD0011063A /* SwiftGit2 in Frameworks */ = {isa = PBXBuildFile; productRef = 1B2A7745300710BD0011063A /* SwiftGit2 */; };
+		1BAE91413011A79000AECFD7 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 1BAE91403011A79000AECFD7 /* MarkdownUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +71,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B2A7746300710BD0011063A /* SwiftGit2 in Frameworks */,
+				1BAE91413011A79000AECFD7 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -131,6 +133,7 @@
 			name = GitNovelWriter;
 			packageProductDependencies = (
 				1B2A7745300710BD0011063A /* SwiftGit2 */,
+				1BAE91403011A79000AECFD7 /* MarkdownUI */,
 			);
 			productName = GitNovelWriter;
 			productReference = 1B2A7704300707650011063A /* GitNovelWriter.app */;
@@ -216,6 +219,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				1B2A7744300710BD0011063A /* XCRemoteSwiftPackageReference "SwiftGit3" */,
+				1BAE913F3011A79000AECFD7 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1B2A7705300707650011063A /* Products */;
@@ -649,6 +653,14 @@
 				kind = branch;
 			};
 		};
+		1BAE913F3011A79000AECFD7 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -656,6 +668,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1B2A7744300710BD0011063A /* XCRemoteSwiftPackageReference "SwiftGit3" */;
 			productName = SwiftGit2;
+		};
+		1BAE91403011A79000AECFD7 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1BAE913F3011A79000AECFD7 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

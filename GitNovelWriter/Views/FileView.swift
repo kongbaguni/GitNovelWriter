@@ -11,7 +11,7 @@ import SwiftUI
 struct FileView: View {
     let fileURL: URL
 
-    private let largeFileThreshold: Int = 300 * 1024 // 300KB
+    private let largeFileThreshold: Int = 60 * 1024 // 60KB
     @State private var isLargeFile: Bool = false
     @State private var allowEditLargeFile: Bool = false
     @State private var saveTask: Task<Void, Never>? = nil
@@ -49,57 +49,21 @@ struct FileView: View {
             ZStack {
                 switch selectedTab {
                 case .plainText:
-                    if isLargeFile {
-                        ChunkedTextView(text: textContent)
-                    } else {
-                        ScrollView {
-                            Text(textContent)
-                                .font(.system(.body, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                        }
-                    }
+                    LargeTextScrollView(fullText: textContent)
 
                 case .markdown:
-                    ScrollView {
-                        // iOS 15+ 에서는 AttributedString이 Markdown 포맷을 기본 내장 지원합니다.
-                        if let attributedString = try? AttributedString(markdown: textContent) {
-                            Text(attributedString)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                        } else {
-                            Text(textContent)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                        }
-                    }
+                    LargeMarkdownView(fullText: textContent)
 
                 case .history:
                     List {
-                        // 실제 Git 라이브러리 탑재 시 commit history 데이터 바인딩
+                        //TODO: 실제 Git 라이브러리 탑재 시 commit history 데이터 바인딩
                         CommitRow(author: "Github User", date: "방금 전", message: "Updated \(fileURL.lastPathComponent)")
                         CommitRow(author: "System", date: "1일 전", message: "First import")
                     }
 
                 case .editor:
-                    VStack(spacing: 8) {
-                        if isLargeFile && !allowEditLargeFile {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("대용량 파일입니다 (300KB+). 편집 시 성능 저하가 발생할 수 있습니다.")
-                                    .font(.footnote)
-                                    .foregroundColor(.orange)
-                                Button("그래도 편집하기") { allowEditLargeFile = true }
-                            }
-                            .padding(8)
-                        } else {
-                            TextEditor(text: $textContent)
-                                .font(.system(.body, design: .monospaced))
-                                .padding(8)
-                                .onChange(of: textContent) {
-                                    scheduleSave()
-                                }
-                        }
-                    }
+                    
+                    LargeFileEditorView(fileURL: fileURL)
                 }
             }
         }
@@ -198,5 +162,129 @@ struct ChunkedTextView: View {
                 }
             }
         }
+    }
+}
+
+struct LargeFileEditorView: View {
+    let fileURL: URL
+    // Use a moderate chunk size to balance performance and memory.
+    private let chunkSize: Int = 64 * 1024
+
+    struct TextChunk: Identifiable {
+        let id = UUID()
+        let range: Range<String.Index>
+        var text: String
+    }
+
+    @State private var fullText: String = ""
+    @State private var chunks: [TextChunk] = []
+    @State private var activeIndex: Int = 0
+    @State private var saveTask: Task<Void, Never>? = nil
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(chunks.indices, id: \.self) { idx in
+                        if idx == activeIndex {
+                            TextEditor(text: binding(for: idx))
+                                .font(.system(.body, design: .monospaced))
+                                .frame(minHeight: 300)
+                                .padding(8)
+                                .id(idx)
+                                .onChange(of: chunks[idx].text) {
+                                    scheduleSave()
+                                }
+                                .onAppear { maybeSetActive(to: idx) }
+                        } else {
+                            Text(chunks[idx].text)
+                                .font(.system(.body, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.vertical, 4)
+                                .id(idx)
+                                .onAppear { maybeSetActive(to: idx) }
+                        }
+                    }
+                }
+            }
+            .task {
+                await load()
+                proxy.scrollTo(activeIndex, anchor: .top)
+            }
+        }
+    }
+
+    private func binding(for index: Int) -> Binding<String> {
+        Binding(get: { chunks[index].text }, set: { newValue in
+            chunks[index].text = newValue
+            // Also update fullText lazily on save to avoid frequent large copies.
+        })
+    }
+
+    private func maybeSetActive(to index: Int) {
+        if abs(activeIndex - index) <= 1 {
+            activeIndex = index
+        }
+    }
+
+    private func load() async {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            // Decode once to a single String (still efficient for MB class files).
+            let text = String(decoding: data, as: UTF8.self)
+            let built = buildChunks(for: text)
+            await MainActor.run {
+                self.fullText = text
+                self.chunks = built
+            }
+        } catch {
+            await MainActor.run {
+                self.fullText = "로드 실패: \(error.localizedDescription)"
+                self.chunks = [TextChunk(range: fullText.startIndex..<fullText.endIndex, text: fullText)]
+            }
+        }
+    }
+
+    private func buildChunks(for text: String) -> [TextChunk] {
+        // Split on character boundaries near chunkSize to avoid breaking UTF-8 scalars.
+        var result: [TextChunk] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            let proposedEnd = text.index(start, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
+            var end = proposedEnd
+            if end < text.endIndex {
+                // Try to end at a newline boundary for better UX.
+                if let newline = text[start..<text.endIndex].lastIndex(of: "\n") {
+                    let distance = text.distance(from: start, to: newline)
+                    if distance > chunkSize / 2 { // avoid tiny trailing chunk
+                        end = text.index(after: newline)
+                    }
+                }
+            }
+            let range = start..<end
+            let slice = String(text[range])
+            result.append(TextChunk(range: range, text: slice))
+            start = end
+        }
+        return result
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            await saveAll()
+        }
+    }
+
+    @MainActor
+    private func saveAll() async {
+        // Rebuild the full text from current chunks and write once.
+        let combined = chunks.map { $0.text }.joined()
+        self.fullText = combined
+        await Task.detached { [combined] in
+            try? combined.write(to: fileURL, atomically: true, encoding: .utf8)
+        }.value
     }
 }

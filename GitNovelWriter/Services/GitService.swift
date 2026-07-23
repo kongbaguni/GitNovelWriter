@@ -6,8 +6,44 @@
 //
 
 import Foundation
+#if canImport(SwiftGit2)
 import SwiftGit2
+#endif
 
+#if !canImport(SwiftGit2)
+// Minimal stubs for preview builds to avoid linking SwiftGit2
+enum GitServiceError: LocalizedError {
+    case missingCredentials
+    case cloneFailed(String)
+    var errorDescription: String? {
+        switch self {
+        case .missingCredentials:
+            return "Missing Git credentials. Please sign in first."
+        case .cloneFailed(let message):
+            return "Clone failed: \(message)"
+        }
+    }
+}
+
+// Provide a lightweight GitService that compiles without SwiftGit2
+class GitService {
+    static let shared = GitService()
+    private var _username: String? = nil
+    private var _token: String? = nil
+    func signInWithAccessToken(username: String, token: String) { _username = username; _token = token }
+    var username: String? { _username }
+    var token: String? { _token }
+    func clone(remoteURL: URL, to localURL: URL, transferProgress: ((Int, Int) -> Void)? = nil, checkoutProgress: ((String, Int, Int) -> Void)? = nil) -> (Any?, Error?) {
+        return (nil, GitServiceError.cloneFailed("SwiftGit2 is unavailable in Preview builds."))
+    }
+    func clone(remoteURL: URL, to localURL: URL, transferProgress: ((Int, Int) -> Void)? = nil, checkoutProgress: ((String, Int, Int) -> Void)? = nil) async -> (Any?, Error?) {
+        return (nil, GitServiceError.cloneFailed("SwiftGit2 is unavailable in Preview builds."))
+    }
+    func createPATCredentials(username: String, token: String) -> String { "stub" }
+}
+#endif
+
+#if canImport(SwiftGit2)
 enum GitServiceError: LocalizedError {
     case missingCredentials
     case cloneFailed(String)
@@ -96,3 +132,4 @@ class GitService {
         return Credentials.plaintext(username: username, password: token)
     }
 }
+#endif
