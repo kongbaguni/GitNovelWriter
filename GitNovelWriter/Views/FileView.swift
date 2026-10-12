@@ -6,7 +6,11 @@
 //
 
 // FileView.swift
+import Foundation
 import SwiftUI
+#if canImport(SwiftGit2)
+import SwiftGit2
+#endif
 
 struct FileView: View {
     let fileURL: URL
@@ -18,6 +22,9 @@ struct FileView: View {
 
     @State private var textContent: String = ""
     @State private var selectedTab: FileTab = .editor
+    @State private var commitHistory: [CommitHistoryItem] = []
+    @State private var isLoadingHistory = false
+    @State private var historyError: String?
 
     enum FileTab: String, CaseIterable, Identifiable {
         case plainText = "텍스트"
@@ -55,11 +62,7 @@ struct FileView: View {
                     LargeMarkdownView(fullText: textContent)
 
                 case .history:
-                    List {
-                        //TODO: 실제 Git 라이브러리 탑재 시 commit history 데이터 바인딩
-                        CommitRow(author: "Github User", date: "방금 전", message: "Updated \(fileURL.lastPathComponent)")
-                        CommitRow(author: "System", date: "1일 전", message: "First import")
-                    }
+                    commitHistoryView
 
                 case .editor:
                     
@@ -68,7 +71,32 @@ struct FileView: View {
             }
         }
         .navigationTitle(fileURL.lastPathComponent)
-        .onAppear(perform: loadFile)
+        .task(id: fileURL) {
+            loadFile()
+            await loadCommitHistory()
+        }
+    }
+
+    @ViewBuilder
+    private var commitHistoryView: some View {
+        if isLoadingHistory {
+            ProgressView("변경 이력을 불러오는 중...")
+        } else if let historyError {
+            ContentUnavailableView("변경 이력을 불러올 수 없습니다", systemImage: "exclamationmark.triangle", description: Text(historyError))
+        } else if commitHistory.isEmpty {
+            ContentUnavailableView("변경 이력이 없습니다", systemImage: "clock.arrow.circlepath")
+        } else {
+            List(commitHistory) { commit in
+                CommitRow(
+                    author: commit.author,
+                    date: commit.date.formatted(date: .abbreviated, time: .shortened),
+                    message: commit.message
+                )
+            }
+            .refreshable {
+                await loadCommitHistory()
+            }
+        }
     }
 
     private func loadFile() {
@@ -90,6 +118,88 @@ struct FileView: View {
         }
     }
 
+    private func loadCommitHistory() async {
+        isLoadingHistory = true
+        historyError = nil
+
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.commitHistory(for: fileURL)
+        }.value
+
+        guard !Task.isCancelled else { return }
+
+        switch result {
+        case .success(let history):
+            commitHistory = history
+        case .failure(let error):
+            commitHistory = []
+            historyError = error.localizedDescription
+        }
+
+        isLoadingHistory = false
+    }
+
+    private nonisolated static func commitHistory(for fileURL: URL) -> Result<[CommitHistoryItem], Error> {
+#if canImport(SwiftGit2)
+        do {
+            guard let repositoryRoot = repositoryRoot(containing: fileURL) else {
+                throw CommitHistoryError.repositoryNotFound
+            }
+
+            let repository = try Repository.at(repositoryRoot).get()
+            let head = try repository.HEAD().get()
+            guard let branch = head as? Branch else {
+                throw CommitHistoryError.detachedHead
+            }
+
+            let filePath = relativePath(of: fileURL, from: repositoryRoot)
+            let commits = try repository.commits(in: branch).compactMap { result -> CommitHistoryItem? in
+                let commit = try result.get()
+                let changesFile = try repository.diff(for: commit).get().deltas.contains { delta in
+                    delta.oldFile?.path == filePath || delta.newFile?.path == filePath
+                }
+
+                guard changesFile else { return nil }
+                return CommitHistoryItem(
+                    id: commit.oid.description,
+                    author: commit.author.name,
+                    date: commit.author.time,
+                    message: commit.message.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+
+            return .success(commits)
+        } catch {
+            return .failure(error)
+        }
+#else
+        return .failure(CommitHistoryError.swiftGit2Unavailable)
+#endif
+    }
+
+    private nonisolated static func repositoryRoot(containing fileURL: URL) -> URL? {
+        let fileManager = FileManager.default
+        var directory = fileURL.deletingLastPathComponent()
+
+        while true {
+            if fileManager.fileExists(atPath: directory.appendingPathComponent(".git").path) {
+                return directory
+            }
+
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path != directory.path else {
+                return nil
+            }
+            directory = parent
+        }
+    }
+
+    private nonisolated static func relativePath(of fileURL: URL, from repositoryRoot: URL) -> String {
+        let rootPath = repositoryRoot.standardizedFileURL.path
+        let filePath = fileURL.standardizedFileURL.path
+        return String(filePath.dropFirst(rootPath.count + 1))
+    }
+
     private func saveFile() {
         // Backward compatibility if needed elsewhere
         scheduleSave()
@@ -106,6 +216,30 @@ struct FileView: View {
             await Task.detached {
                 try? text.write(to: url, atomically: true, encoding: .utf8)
             }.value
+        }
+    }
+}
+
+private struct CommitHistoryItem: Identifiable, Sendable {
+    let id: String
+    let author: String
+    let date: Date
+    let message: String
+}
+
+private enum CommitHistoryError: LocalizedError, Sendable {
+    case repositoryNotFound
+    case detachedHead
+    case swiftGit2Unavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .repositoryNotFound:
+            return "이 파일이 포함된 Git 저장소를 찾을 수 없습니다."
+        case .detachedHead:
+            return "분리된 HEAD 상태에서는 변경 이력을 표시할 수 없습니다."
+        case .swiftGit2Unavailable:
+            return "SwiftGit2를 사용할 수 없습니다."
         }
     }
 }
@@ -153,7 +287,7 @@ struct ChunkedTextView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(chunks.enumerated()), id: \.offset) { _, chunk in
+                ForEach(chunks, id: \.self) { chunk in
                     Text(String(chunk))
                         .font(.system(.body, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -167,97 +301,92 @@ struct ChunkedTextView: View {
 
 struct LargeFileEditorView: View {
     let fileURL: URL
-    // Use a moderate chunk size to balance performance and memory.
     private let chunkSize: Int = 64 * 1024
-
+    
     struct TextChunk: Identifiable {
         let id = UUID()
         let range: Range<String.Index>
         var text: String
     }
-
+    
     @State private var fullText: String = ""
     @State private var chunks: [TextChunk] = []
-    @State private var activeIndex: Int = 0
+    @State private var currentChunkIndex: Int = 0
+    @State private var currentChunkText: String = ""
     @State private var saveTask: Task<Void, Never>? = nil
-
+    @State private var isLoaded: Bool = false
+    
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(chunks.indices, id: \.self) { idx in
-                        if idx == activeIndex {
-                            TextEditor(text: binding(for: idx))
-                                .font(.system(.body, design: .monospaced))
-                                .frame(minHeight: 300)
-                                .padding(8)
-                                .id(idx)
-                                .onChange(of: chunks[idx].text) {
-                                    scheduleSave()
-                                }
-                                .onAppear { maybeSetActive(to: idx) }
-                        } else {
-                            Text(chunks[idx].text)
-                                .font(.system(.body, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal)
-                                .padding(.vertical, 4)
-                                .id(idx)
-                                .onAppear { maybeSetActive(to: idx) }
-                        }
+        VStack(spacing: 0) {
+            if !isLoaded {
+                ProgressView("파일을 여는 중...")
+                    .padding()
+            } else if chunks.isEmpty {
+                Text("파일이 비어있거나 로드 실패")
+            } else {
+                HStack {
+                    Button("◀ 이전") {
+                        navigateChunk(offset: -1)
                     }
+                    .disabled(currentChunkIndex == 0)
+                    
+                    Spacer()
+                    Text("Chunk \(currentChunkIndex + 1) / \(chunks.count)")
+                        .font(.caption)
+                    Spacer()
+                    Button("다음 ▶") {
+                        navigateChunk(offset: 1)
+                    }
+                    .disabled(currentChunkIndex >= chunks.count - 1)
                 }
-            }
-            .task {
-                await load()
-                proxy.scrollTo(activeIndex, anchor: .top)
+                .padding(.horizontal)
+                
+                TextEditor(text: $currentChunkText)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 300)
+                    .padding(8)
+                
+                Button("저장") {
+                    saveCurrentChunk()
+                    saveAll()
+                }
+                .padding(.bottom)
             }
         }
+        .onAppear(perform: { Task { await load() } })
     }
-
-    private func binding(for index: Int) -> Binding<String> {
-        Binding(get: { chunks[index].text }, set: { newValue in
-            chunks[index].text = newValue
-            // Also update fullText lazily on save to avoid frequent large copies.
-        })
-    }
-
-    private func maybeSetActive(to index: Int) {
-        if abs(activeIndex - index) <= 1 {
-            activeIndex = index
-        }
-    }
-
+    
     private func load() async {
         do {
             let data = try Data(contentsOf: fileURL)
-            // Decode once to a single String (still efficient for MB class files).
             let text = String(decoding: data, as: UTF8.self)
             let built = buildChunks(for: text)
             await MainActor.run {
                 self.fullText = text
                 self.chunks = built
+                self.currentChunkIndex = 0
+                self.currentChunkText = built.first?.text ?? ""
+                self.isLoaded = true
             }
         } catch {
             await MainActor.run {
                 self.fullText = "로드 실패: \(error.localizedDescription)"
-                self.chunks = [TextChunk(range: fullText.startIndex..<fullText.endIndex, text: fullText)]
+                self.chunks = []
+                self.isLoaded = true
             }
         }
     }
-
+    
     private func buildChunks(for text: String) -> [TextChunk] {
-        // Split on character boundaries near chunkSize to avoid breaking UTF-8 scalars.
         var result: [TextChunk] = []
         var start = text.startIndex
         while start < text.endIndex {
             let proposedEnd = text.index(start, offsetBy: chunkSize, limitedBy: text.endIndex) ?? text.endIndex
             var end = proposedEnd
             if end < text.endIndex {
-                // Try to end at a newline boundary for better UX.
                 if let newline = text[start..<text.endIndex].lastIndex(of: "\n") {
                     let distance = text.distance(from: start, to: newline)
-                    if distance > chunkSize / 2 { // avoid tiny trailing chunk
+                    if distance > chunkSize / 2 {
                         end = text.index(after: newline)
                     }
                 }
@@ -269,22 +398,32 @@ struct LargeFileEditorView: View {
         }
         return result
     }
-
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            await saveAll()
+    
+    private func navigateChunk(offset: Int) {
+        guard isLoaded, !chunks.isEmpty else { return }
+        saveCurrentChunk()
+        let newIndex = currentChunkIndex + offset
+        if newIndex >= 0 && newIndex < chunks.count {
+            currentChunkIndex = newIndex
+            currentChunkText = chunks[newIndex].text
         }
     }
-
-    @MainActor
-    private func saveAll() async {
-        // Rebuild the full text from current chunks and write once.
+    
+    private func saveCurrentChunk() {
+        guard isLoaded, currentChunkIndex < chunks.count else { return }
+        chunks[currentChunkIndex].text = currentChunkText
+    }
+    
+    private func saveAll() {
+        saveTask?.cancel()
         let combined = chunks.map { $0.text }.joined()
         self.fullText = combined
-        await Task.detached { [combined] in
-            try? combined.write(to: fileURL, atomically: true, encoding: .utf8)
-        }.value
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            await Task.detached { [combined] in
+                try? combined.write(to: fileURL, atomically: true, encoding: .utf8)
+            }.value
+        }
     }
 }
+
